@@ -53,8 +53,3 @@ pub async fn get_events(
     }
     Ok(serde_json::to_string(&all_events).unwrap())
 }
-
-/// Fetches all sales events for a given collection slug from OpenSea as raw JSON (all pages concatenated into a single array).
-pub async fn get_sales(collection_slug: &str, api_key: Option<&str>) -> Result<String> {
-    get_events(collection_slug, Some("sale"), api_key).await
-}

@@ -20,6 +20,10 @@ struct Cli {
     /// Directory to write the output JSON files
     #[arg(long = "output-path", default_value = "data")]
     output_path: PathBuf,
+
+    /// Event type to fetch (sale, listing, offer, etc.)
+    #[arg(long = "event-type", default_value = "sale")]
+    event_type: String,
 }
 
 #[tokio::main]
@@ -28,16 +32,22 @@ async fn main() {
 
     let cli = Cli::parse();
     println!(
-        "Fetching NFT sales data for collection: {}",
-        cli.collection_slug
+        "Fetching NFT {} data for collection: {}",
+        cli.event_type, cli.collection_slug
     );
 
     let api_key = env::var("OPENSEA_API_KEY").ok();
 
-    let raw_json = match events::get_sales(&cli.collection_slug, api_key.as_deref()).await {
+    let raw_json = match events::get_events(
+        &cli.collection_slug,
+        Some(&cli.event_type),
+        api_key.as_deref(),
+    )
+    .await
+    {
         Ok(json) => json,
         Err(e) => {
-            eprintln!("Error fetching sales: {}", e);
+            eprintln!("Error fetching events: {}", e);
             return;
         }
     };
@@ -49,7 +59,7 @@ async fn main() {
 
     let output_file = cli
         .output_path
-        .join(format!("{}_sales.json", cli.collection_slug));
+        .join(format!("{}_{}s.json", cli.collection_slug, cli.event_type));
 
     let formatted_json = match serde_json::from_str::<serde_json::Value>(&raw_json) {
         Ok(val) => serde_json::to_string_pretty(&val).unwrap_or(raw_json.clone()),
@@ -60,5 +70,9 @@ async fn main() {
         eprintln!("Failed to write output file: {}", e);
         return;
     }
-    println!("Sales data written to {}", output_file.display());
+    println!(
+        "{} data written to {}",
+        cli.event_type,
+        output_file.display()
+    );
 }
