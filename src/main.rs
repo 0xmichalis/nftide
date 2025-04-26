@@ -38,6 +38,16 @@ async fn main() {
 
     let api_key = env::var("OPENSEA_API_KEY").ok();
 
+    let valid_event_types = ["sale", "offer", "listing"];
+    if !valid_event_types.contains(&cli.event_type.as_str()) {
+        eprintln!(
+            "Invalid event type: {}. Valid options are: {}.",
+            cli.event_type,
+            valid_event_types.join(", ")
+        );
+        std::process::exit(1);
+    }
+
     let raw_json = match events::get_events(
         &cli.collection_slug,
         Some(&cli.event_type),
