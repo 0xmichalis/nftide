@@ -31,6 +31,22 @@ async fn do_request(
                 sleep(Duration::from_secs(sleep_secs)).await;
                 continue;
             }
+            Ok(r) if r.status().is_server_error() => {
+                if retries >= 5 {
+                    return Err(anyhow!(
+                        "Failed to fetch events: {} after 5 retries",
+                        r.status()
+                    ));
+                }
+                retries += 1;
+                eprintln!(
+                    "Received {}. Sleeping for 5 seconds before retrying (attempt {}/5)...",
+                    r.status(),
+                    retries
+                );
+                sleep(Duration::from_secs(5)).await;
+                continue;
+            }
             Ok(r) => break r,
             Err(e) => {
                 if retries >= 5 {
