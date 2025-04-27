@@ -23,7 +23,8 @@ async fn do_request(
                     .get("retry-after")
                     .and_then(|v| v.to_str().ok())
                     .and_then(|s| s.parse::<u64>().ok())
-                    .unwrap_or(5);
+                    .filter(|&s| s > 0)
+                    .unwrap_or(60);
                 if retries >= 5 {
                     return Err(anyhow!(
                         "Failed to fetch events: 429 Too Many Requests after 5 retries"
