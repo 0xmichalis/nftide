@@ -5,10 +5,16 @@ use tokio::time::{Duration, sleep};
 async fn do_request(
     client: &reqwest::Client,
     url: &str,
-    headers: &HeaderMap,
-) -> Result<Option<(Vec<serde_json::Value>, Option<String>)>> {
+    api_key: Option<&str>,
+) -> Result<reqwest::Response> {
+    let mut headers = HeaderMap::new();
+    headers.insert(ACCEPT, HeaderValue::from_static("application/json"));
+    if let Some(key) = api_key {
+        headers.insert("x-api-key", HeaderValue::from_str(key).unwrap());
+    }
     let mut retries = 0;
-    let resp = loop {
+
+    loop {
         let resp = client.get(url).headers(headers.clone()).send().await;
         match resp {
             Ok(r) if r.status() == reqwest::StatusCode::TOO_MANY_REQUESTS => {
@@ -47,7 +53,7 @@ async fn do_request(
                 sleep(Duration::from_secs(5)).await;
                 continue;
             }
-            Ok(r) => break r,
+            Ok(r) => return Ok(r),
             Err(e) => {
                 if retries >= 5 {
                     return Err(anyhow!("Failed to fetch events after 5 retries: {}", e));
@@ -61,22 +67,7 @@ async fn do_request(
                 continue;
             }
         }
-    };
-    let status = resp.status();
-    if !status.is_success() {
-        return Err(anyhow!("Failed to fetch events: {}", status));
     }
-    let json: serde_json::Value = resp.json().await?;
-    let events = json
-        .get("asset_events")
-        .and_then(|v| v.as_array())
-        .cloned()
-        .unwrap_or_default();
-    let next = json
-        .get("next")
-        .and_then(|v| v.as_str())
-        .map(|s| s.to_string());
-    Ok(Some((events, next)))
 }
 
 /// Fetches all events for a given collection slug from OpenSea, supporting pagination and event_type filtering, and returns raw JSON array as String.
@@ -106,22 +97,31 @@ pub async fn get_events(
             url.push_str(&serde_urlencoded::to_string(&params).unwrap());
         }
 
-        let mut headers = HeaderMap::new();
-        headers.insert(ACCEPT, HeaderValue::from_static("application/json"));
-        if let Some(key) = api_key {
-            headers.insert("x-api-key", HeaderValue::from_str(key).unwrap());
+        let resp = do_request(&client, &url, api_key).await?;
+        let status = resp.status();
+        if !status.is_success() {
+            return Err(anyhow!("Failed to fetch events: {}", status));
         }
-        let result = do_request(&client, &url, &headers).await?;
-        if let Some((events, next_cursor)) = result {
-            all_events.extend(events);
-            if let Some(cursor) = next_cursor {
-                if !cursor.is_empty() {
-                    next = Some(cursor);
-                    continue;
-                }
+
+        let json: serde_json::Value = resp.json().await?;
+        let events = json
+            .get("asset_events")
+            .and_then(|v| v.as_array())
+            .cloned()
+            .unwrap_or_default();
+        let next_cursor = json
+            .get("next")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string());
+        all_events.extend(events);
+        if let Some(cursor) = next_cursor {
+            if !cursor.is_empty() {
+                next = Some(cursor);
+                continue;
             }
         }
         break;
     }
+
     Ok(serde_json::to_string(&all_events).unwrap())
 }
